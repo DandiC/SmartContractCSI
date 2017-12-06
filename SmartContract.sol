@@ -18,6 +18,7 @@ contract CSIContract_Data {
         string data;    //The data (it can't be shown to the costumer unless they pay)
         uint256 cost;   //minimum cost to display the data
         bool available; //true when the data is initialized
+        mapping (address => bool) purchasedBy; //array of addresses that have purchased the data
     }
     
     
@@ -25,7 +26,7 @@ contract CSIContract_Data {
     event DataPurchased(address recipient, string data);            //Event executed when data is purchased (shows the data)      
     event Error(string details);
     
-    uint256[] public ids;   //array with ids
+    uint256[] ids;   //array with ids
     
     mapping (uint256 => Data) dataUploaded; //Map to obtain the data given an id
     
@@ -33,17 +34,9 @@ contract CSIContract_Data {
     function CSIContract_Data(string _info, string _data, uint256 _cost) public {
         
         //Add data to the map
-        dataUploaded[id] = Data(id, _info, _data, _cost, true);
-        
-        //Add id to ids array
-        ids.push(id);
-        
-        //Show message (event)
-        newDataAvailable(_info, id, _cost);
-        
-        //increment id counter
-        id++;
+        UploadNewData(_info, _data,  _cost);
     } 
+    
     
     //Function to upload new data to the system
     function UploadNewData(string _info, string _data, uint256 _cost) public {
@@ -58,6 +51,8 @@ contract CSIContract_Data {
         //Add data to the map
         dataUploaded[id] = Data(id, _info, _data, _cost, true);
         
+        dataUploaded[id].purchasedBy[creator] = true;
+        
         //Add id to ids array
         ids.push(id);
         
@@ -71,39 +66,61 @@ contract CSIContract_Data {
     
     
     //Function to purchase data
-    function purchaseData(uint256 _id) payable public returns (string data) {
+    function purchaseData(uint256 _id) payable public {
         
-        //Check if ether sent is equal or greater than the minimum cost of the data
-        if (msg.value < dataUploaded[_id].cost )
+        var returnedData = dataUploaded[_id];
+        
+        if (returnedData.available)
         {
-            Error("Minimum cost was not met");
-        }
-        else
+            //Convert from wei to ether
+            var etherSent = msg.value/1000000000000000000;
+            
+            //Check if ether sent is equal or greater than the minimum cost of the data
+            if (etherSent < returnedData.cost )
+            {
+                Error("Minimum cost was not met");
+            }
+            else
+            {
+            
+            dataUploaded[_id].purchasedBy[msg.sender] = true;
+            
+            //send ether to owner's address
+           creator.transfer(msg.value);
+            
+            //Shows the data, we should probably research how to do this better (TODO)
+            DataPurchased(msg.sender, returnedData.data);
+            }
+        
+        }else
         {
-        
-        //send ether to owner's address
-       creator.transfer(msg.value);
-        
-        //Shows the data, we should probably research how to do this better (TODO)
-        DataPurchased(msg.sender, dataUploaded[_id].data);
-        return(dataUploaded[_id].data);
+            Error("No data was found with the given id");
         }
+        
     }
     
     //Function to display the information of the data given an ID
-    function getDataInfo(uint256 _id) public constant returns (string info, uint256 cost)
+    function getDataInfo(uint256 providedID) public constant returns (uint256 dataID, string info, uint256 cost, string data)
     {
         //Get data
-        var data = dataUploaded[_id];
+        var d = dataUploaded[providedID];
         
         //Exit of data does not exist
-        if (!data.available){
+        if (!d.available){
             revert();
         }
         
+        var actualData = "Data not available until a purchase is made.";
+        
+        if (d.purchasedBy[msg.sender])
+        {
+            actualData = d.data;
+        }
+        
         //Return data
-        return(data.info, data.cost);
+        return(d.id, d.info, d.cost, actualData);
     }
+    
     
     //Function to kill the contract
     function kill() public {
